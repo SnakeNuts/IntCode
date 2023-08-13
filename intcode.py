@@ -1,3 +1,4 @@
+import queue
 from collections import defaultdict
 
 class IntCodeCPU:
@@ -9,6 +10,12 @@ class IntCodeCPU:
         self.relative_base = 0
         self.id = id
         self.memory = defaultdict(int)
+
+        self.input_queue = queue.SimpleQueue()
+
+        self.output_value = 0
+        self.output_set = False
+        self.output_stop_mode = False
     
     def __str__(self) -> str:
         return f"CPU [{self.id}] - pc:{self.pc_peek()} - memsize:{len(self.memory)}"
@@ -49,26 +56,26 @@ class IntCodeCPU:
             case 2:
                 return self.get_mem(self.relative_base + parameter)
             case _:
-                raise Exception(f"Invalid addressing mode '{mode}'")
+                raise Exception(f"[{self.id}] - Invalid addressing mode '{mode}'")
 
     def write(self, target, value, mode):
         match mode:
             case 0:
                 self.set_mem(target, value)
             case 1:
-                raise Exception("Direct mode for writing not allowed!")
+                raise Exception("[{self.id}] - Direct mode for writing not allowed!")
             case 2:
                 self.set_mem(self.relative_base + target, value)
             case _:
-                raise Exception(f"Invalid addressing mode '{mode}'")
+                raise Exception(f"[{self.id}] - Invalid addressing mode '{mode}'")
 
 
     # runtime section
 
     def run(self):
-        finished = False
-        while not finished:
-            finished = self.step()
+        stopped = False
+        while not stopped:
+            stopped = self.step()
 
     def step(self) -> bool:
         opcode_struct = self.next_value()
@@ -89,6 +96,9 @@ class IntCodeCPU:
                 self.opcode_input(param1_mode)
             case 4:
                 self.opcode_output(param1_mode)
+                if self.output_stop_mode:
+                    print(f"[{self.id}] - stopping after output")
+                    return True
             case 5:
                 self.opcode_jump_if_true(param1_mode, param2_mode)
             case 6:
@@ -100,10 +110,10 @@ class IntCodeCPU:
             case 9:
                 self.opcode_set_relative_base(param1_mode)
             case 99:
-                print("exit")
+                print(f"[{self.id}] - program done")
                 return True
             case _:
-                raise Exception(f"Invalid opcode '{opcode}'")
+                raise Exception(f"[{self.id}] - Invalid opcode '{opcode}'")
         return False
     
     def opcode_add(self, param1_mode, param2_mode, param3_mode) -> None:
@@ -120,12 +130,18 @@ class IntCodeCPU:
 
     def opcode_input(self, param1_mode) -> None:
         target = self.next_value()
-        value = int(input(f"Please enter an integer to be stored at {target}:"))
+        if self.input_queue.empty():
+            value = int(input(f"[{self.id}] - Please enter an integer to be stored at {target}:"))
+        else:
+            value = self.input_queue.get()
+            print(f"[{self.id}] - Read {value} from input queue into {target}")
         self.write(target, value, param1_mode)
 
     def opcode_output(self, param1_mode) -> None:
         value = self.read(self.next_value(), param1_mode)
-        print(value)
+        print(f"[{self.id}] - output: {value}")
+        self.output_value = value
+        self.output_set = True
 
     def opcode_jump_if_true(self, param1_mode, param2_mode) -> None:
         source_1 = self.read(self.next_value(), param1_mode)
